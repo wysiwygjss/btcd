@@ -1,166 +1,221 @@
 import * as THREE from 'three';
-import { buildHouse, setFloorVisibility, setCeilingVisible } from './houseBuilder.js';
-import { ViewControls } from './controls.js';
-import { initShare, parseUrlState } from './share.js';
-import { GROUND_ROOMS, FIRST_ROOMS, PRESETS, FT, roomCenter } from './floorPlan.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { buildHouse, setFloorVisibility } from './houseBuilder.js';
+import { GROUND_ROOMS, FIRST_ROOMS, FT, roomCenter } from './floorPlan.js';
 
-// ── Scene setup ──────────────────────────────────────────────────
+// ── Scene ────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setClearColor(0x87b8d8);
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x87b8d8, 30, 80);
 
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
-camera.position.set(9 * FT, 5.5 * FT + 0.33 * FT, 21 * FT);
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.05, 200);
+const EYE = 5.5 * FT;
 
-// Lighting
-const hemi = new THREE.HemisphereLight(0xfff8f0, 0x8a9ab0, 0.65);
+const hemi = new THREE.HemisphereLight(0xfff8f0, 0x8a9ab0, 0.7);
 scene.add(hemi);
-
-const sun = new THREE.DirectionalLight(0xfff5e8, 1.1);
-sun.position.set(15, 25, 10);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.near = 1;
-sun.shadow.camera.far = 60;
-sun.shadow.camera.left = -15;
-sun.shadow.camera.right = 15;
-sun.shadow.camera.top = 15;
-sun.shadow.camera.bottom = -15;
+const sun = new THREE.DirectionalLight(0xfff5e8, 1.0);
+sun.position.set(12, 20, 8);
 scene.add(sun);
 
-// Ground plane (yard)
-const yardGeo = new THREE.PlaneGeometry(60, 60);
-const yardMat = new THREE.MeshStandardMaterial({ color: 0x7aab6a, roughness: 1 });
-const yard = new THREE.Mesh(yardGeo, yardMat);
+const yard = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshStandardMaterial({ color: 0x7aab6a }),
+);
 yard.rotation.x = -Math.PI / 2;
 yard.position.set(9 * FT, -0.02, 15 * FT);
-yard.receiveShadow = true;
 scene.add(yard);
 
-// House
 const house = buildHouse();
 scene.add(house);
+setFloorVisibility(house, 'ground');
 
-// Controls
-const viewControls = new ViewControls(camera, canvas, house);
-initShare(viewControls);
+// Simple orbit controls — drag to look, no pointer-lock needed
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.1;
+controls.maxPolarAngle = Math.PI / 2.05;
+controls.minDistance = 2;
+controls.maxDistance = 30;
+controls.enablePan = false;
 
+let floorLevel = 0; // 0 ground, 1 first
 let floorMode = 'ground';
-let ceilingVisible = false;
 
-// ── UI wiring ────────────────────────────────────────────────────
-function populateRoomList() {
-  const list = document.getElementById('room-list');
-  const rooms = floorMode === 'first' ? FIRST_ROOMS : floorMode === 'both' ? [...GROUND_ROOMS, ...FIRST_ROOMS] : GROUND_ROOMS;
-  list.innerHTML = rooms.map((r) =>
-    `<li><button class="room-btn" data-room="${r.id}">${r.name}</button></li>`
+function eyeY() {
+  return (floorLevel === 0 ? 0.33 * FT : 8.33 * FT) + EYE;
+}
+
+function setCamera(x, z, lookX, lookZ) {
+  camera.position.set(x, eyeY(), z);
+  controls.target.set(lookX ?? x, eyeY() - 1, lookZ ?? z - 2);
+  controls.update();
+}
+
+setCamera(9 * FT, 22 * FT);
+
+// ── Movement via d-pad ───────────────────────────────────────────
+const keys = {};
+const MOVE = 2.5;
+
+function bindBtn(id, code) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  const down = () => { keys[code] = true; btn.classList.add('pressed'); };
+  const up = () => { keys[code] = false; btn.classList.remove('pressed'); };
+  btn.addEventListener('mousedown', down);
+  btn.addEventListener('mouseup', up);
+  btn.addEventListener('mouseleave', up);
+  btn.addEventListener('touchstart', (e) => { e.preventDefault(); down(); });
+  btn.addEventListener('touchend', up);
+}
+
+bindBtn('btn-up', 'fwd');
+bindBtn('btn-down', 'back');
+bindBtn('btn-left', 'left');
+bindBtn('btn-right', 'right');
+
+function movePlayer(dt) {
+  if (!keys.fwd && !keys.back && !keys.left && !keys.right) return;
+  const speed = MOVE * dt;
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  dir.y = 0;
+  dir.normalize();
+  const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+
+  if (keys.fwd) camera.position.addScaledVector(dir, speed);
+  if (keys.back) camera.position.addScaledVector(dir, -speed);
+  if (keys.left) camera.position.addScaledVector(right, -speed);
+  if (keys.right) camera.position.addScaledVector(right, speed);
+
+  // Keep inside house
+  camera.position.x = THREE.MathUtils.clamp(camera.position.x, 0.5, 17.5 * FT);
+  camera.position.z = THREE.MathUtils.clamp(camera.position.z, 0.5, 29.5 * FT);
+  camera.position.y = eyeY();
+  controls.target.y = eyeY() - 1;
+}
+
+// ── Room navigation ──────────────────────────────────────────────
+function showRoom(name) {
+  const banner = document.getElementById('room-banner');
+  banner.textContent = name;
+  banner.classList.remove('hidden');
+  banner.style.opacity = '1';
+  clearTimeout(showRoom._t);
+  showRoom._t = setTimeout(() => { banner.style.opacity = '0'; }, 3000);
+}
+
+function goToRoom(room) {
+  const c = roomCenter(room);
+  floorLevel = room.floor === 'first' ? 1 : 0;
+  floorMode = floorLevel === 0 ? 'ground' : 'first';
+  setFloorVisibility(house, floorMode);
+  updateFloorBtn();
+  setCamera(c.x, c.z + 1 * FT, c.x, c.z - 1 * FT);
+  showRoom(room.name);
+  document.querySelectorAll('.room-chip').forEach((b) => {
+    b.classList.toggle('active', b.dataset.room === room.id);
+  });
+}
+
+function buildRoomButtons() {
+  const row = document.getElementById('room-buttons');
+  const rooms = floorLevel === 0 ? GROUND_ROOMS.filter((r) => !r.open) : FIRST_ROOMS.filter((r) => !r.open && !r.balcony);
+  row.innerHTML = rooms.map((r) =>
+    `<button class="room-chip" data-room="${r.id}">${r.name}</button>`
   ).join('');
-
-  list.querySelectorAll('.room-btn').forEach((btn) => {
+  row.querySelectorAll('.room-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
       const room = rooms.find((r) => r.id === btn.dataset.room);
-      if (!room) return;
-      const c = roomCenter(room);
-      const floor = room.floor === 'first' ? 1 : 0;
-      viewControls.setMode('walk');
-      viewControls.teleport(c.x, c.z, 0, floor);
-      highlightRoom(room.id);
+      if (room) goToRoom(room);
     });
   });
 }
 
-function highlightRoom(id) {
-  document.querySelectorAll('.room-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.room === id);
-  });
-  const room = [...GROUND_ROOMS, ...FIRST_ROOMS].find((r) => r.id === id);
-  const label = document.getElementById('room-label');
-  if (room) {
-    label.textContent = room.name;
-    label.classList.remove('hidden');
-    setTimeout(() => label.classList.add('hidden'), 2500);
-  }
+function updateFloorBtn() {
+  const btn = document.getElementById('btn-floor');
+  btn.textContent = floorLevel === 0 ? 'Ground Floor' : 'Upstairs';
 }
 
-document.querySelectorAll('.floor-tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.floor-tab').forEach((t) => t.classList.remove('active'));
-    tab.classList.add('active');
-    floorMode = tab.dataset.floor;
-    setFloorVisibility(house, floorMode);
-    populateRoomList();
-  });
+document.getElementById('btn-floor').addEventListener('click', () => {
+  floorLevel = floorLevel === 0 ? 1 : 0;
+  floorMode = floorLevel === 0 ? 'ground' : 'first';
+  setFloorVisibility(house, floorMode);
+  updateFloorBtn();
+  buildRoomButtons();
+  const rooms = floorLevel === 0 ? GROUND_ROOMS : FIRST_ROOMS;
+  const porch = rooms.find((r) => r.open);
+  if (porch) goToRoom(porch);
+  else goToRoom(rooms.find((r) => !r.open));
 });
 
-document.querySelectorAll('.mode-tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.mode-tab').forEach((t) => t.classList.remove('active'));
-    tab.classList.add('active');
-    const mode = tab.dataset.mode;
-    viewControls.setMode(mode);
-    document.getElementById('controls-walk').classList.toggle('hidden', mode !== 'walk');
-    document.getElementById('controls-orbit').classList.toggle('hidden', mode === 'walk');
-    document.getElementById('crosshair').classList.toggle('hidden', mode !== 'walk');
-  });
-});
+// ── Guided tour ──────────────────────────────────────────────────
+const TOUR = [
+  ...GROUND_ROOMS.filter((r) => !r.open).map((r) => ({ room: r, pause: 4 })),
+  ...FIRST_ROOMS.filter((r) => !r.open && !r.balcony).map((r) => ({ room: r, pause: 4 })),
+];
 
-canvas.addEventListener('click', () => {
-  if (viewControls.mode === 'walk') viewControls.requestLock();
-});
+let tourRunning = false;
+let tourIdx = 0;
+let tourTimer = 0;
 
-document.getElementById('btn-fullscreen')?.addEventListener('click', () => {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen();
+function startTour() {
+  tourRunning = !tourRunning;
+  const btn = document.getElementById('btn-tour');
+  if (tourRunning) {
+    btn.textContent = '⏸ Pause Tour';
+    tourIdx = 0;
+    tourTimer = 0;
+    visitTourStop();
   } else {
-    document.exitFullscreen();
+    btn.textContent = '▶ Guided Tour';
   }
-});
-
-document.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyC') {
-    ceilingVisible = !ceilingVisible;
-    setCeilingVisible(house, !ceilingVisible);
-  }
-});
-
-// ── URL state on load ────────────────────────────────────────────
-const urlState = parseUrlState();
-if (urlState) {
-  viewControls.applyState(urlState);
-  if (urlState.mode) {
-    document.querySelectorAll('.mode-tab').forEach((t) => {
-      t.classList.toggle('active', t.dataset.mode === urlState.mode);
-    });
-    document.getElementById('controls-walk').classList.toggle('hidden', urlState.mode !== 'walk');
-    document.getElementById('controls-orbit').classList.toggle('hidden', urlState.mode === 'walk');
-  }
-  if (urlState.floor != null) {
-    floorMode = urlState.floor === 1 ? 'first' : 'ground';
-    document.querySelectorAll('.floor-tab').forEach((t) => {
-      t.classList.toggle('active', t.dataset.floor === floorMode);
-    });
-    setFloorVisibility(house, floorMode);
-  }
-} else {
-  setFloorVisibility(house, 'ground');
 }
 
-populateRoomList();
+function visitTourStop() {
+  if (!tourRunning || tourIdx >= TOUR.length) {
+    tourRunning = false;
+    document.getElementById('btn-tour').textContent = '▶ Guided Tour';
+    return;
+  }
+  const { room } = TOUR[tourIdx];
+  goToRoom(room);
+  tourTimer = 0;
+}
+
+document.getElementById('btn-tour').addEventListener('click', startTour);
+
+// ── Start ────────────────────────────────────────────────────────
+document.getElementById('btn-start').addEventListener('click', () => {
+  document.getElementById('welcome').classList.add('hidden');
+  document.getElementById('simple-ui').classList.remove('hidden');
+  buildRoomButtons();
+  goToRoom(GROUND_ROOMS.find((r) => r.id === 'sitting'));
+});
 
 // ── Render loop ──────────────────────────────────────────────────
 const clock = new THREE.Clock();
 
 function animate() {
   requestAnimationFrame(animate);
-  const delta = Math.min(clock.getDelta(), 0.05);
-  viewControls.update(delta);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  movePlayer(dt);
+  controls.update();
+
+  if (tourRunning) {
+    tourTimer += dt;
+    if (tourTimer >= TOUR[tourIdx].pause) {
+      tourIdx++;
+      visitTourStop();
+    }
+  }
+
   renderer.render(scene, camera);
 }
 animate();
@@ -170,6 +225,3 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
-// Expose for debugging
-window.__houseViewer = { scene, house, viewControls, PRESETS, FT };
