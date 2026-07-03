@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="description" content="Look around your 18 by 30 foot house in 3D" />
+    <title>Our House — 3D Tour</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="canvas"></canvas>
+
+      <!-- Welcome screen — goes away after one tap -->
+      <div id="welcome" class="welcome">
+        <div class="welcome-card">
+          <div class="welcome-icon">🏠</div>
+          <h1>Our House</h1>
+          <p>18 feet wide &times; 30 feet long<br>Ground floor &amp; upstairs</p>
+          <button id="btn-start" class="big-btn">Tap to Start Tour</button>
+        </div>
+      </div>
+
+      <!-- Big room name -->
+      <div id="room-banner" class="room-banner hidden"></div>
+
+      <!-- Simple controls — always visible, big touch targets -->
+      <div id="simple-ui" class="simple-ui hidden">
+        <div class="top-bar">
+          <span class="top-title">Our House</span>
+          <button id="btn-floor" class="pill-btn">Ground Floor</button>
+        </div>
+
+        <div class="room-row" id="room-buttons"></div>
+
+        <div class="bottom-bar">
+          <button id="btn-tour" class="big-btn tour-btn">▶ Guided Tour</button>
+          <div class="dpad">
+            <button class="dpad-btn" id="btn-up" aria-label="Forward">▲</button>
+            <div class="dpad-mid">
+              <button class="dpad-btn" id="btn-left" aria-label="Left">◀</button>
+              <button class="dpad-btn" id="btn-right" aria-label="Right">▶</button>
+            </div>
+            <button class="dpad-btn" id="btn-down" aria-label="Back">▼</button>
+          </div>
+          <button id="btn-look" class="big-btn look-btn">👆 Drag screen<br>to look around</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
