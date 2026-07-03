@@ -1,47 +1,23 @@
-# House Blueprint 3D Walkthrough
+# Our House — 3D Tour
 
-Interactive 3D visualization of the **18′ × 30′** house from blueprints A03 (Ground Floor) and A05 (First Floor).
+**No install needed.** One link for Mom & Dad:
 
-## Features
+## https://cdn.jsdelivr.net/gh/wysiwygjss/btcd@cursor/house-blueprint-3d-viewer-102b/house-tour/index.html
 
-- **3D floor plans** built from blueprint dimensions
-- **First-person walkthrough** — click the canvas, then use WASD + mouse
-- **Orbit & top-down** viewing modes
-- **Floor switcher** — Ground, First, or both floors (ghosted)
-- **Room navigation** — jump to any room from the sidebar
-- **Easy sharing** — Share button copies a link with your current camera position; includes QR code and quick-view presets
+### For your parents
+1. Tap the link
+2. Tap **"Tap to Start Tour"**
+3. Tap **"▶ Guided Tour"** — walks through every room automatically
+4. Tap a room name to jump there
+5. Use **▲▼◀▶** buttons to walk
+6. **Drag the screen** to look around
 
-## Controls
+Works on phone, tablet, and computer. No keyboard required.
 
-| Key | Action |
-|-----|--------|
-| W A S D | Move |
-| Mouse | Look around |
-| Shift | Run |
-| Space | Switch floor (walk mode) |
-| C | Toggle ceiling |
-| Esc | Release mouse |
+### Is sharing the house plan legal?
+**Yes.** You own this blueprint. Sharing it privately with your parents is completely fine. There is no restriction preventing this.
 
-## Run locally
-
+### For developers (optional)
 ```bash
-cd house-blueprint-viewer
-npm install
-npm run dev
+cd house-blueprint-viewer && npm install && npm run dev
 ```
-
-Open the URL shown in the terminal (default `http://localhost:5173`).
-
-## Build for deployment
-
-```bash
-npm run build
-npm run preview
-```
-
-Deploy the `dist/` folder to any static host (Netlify, Vercel, GitHub Pages, etc.). Share links work because view state is encoded in the URL hash.
-
-## Blueprint source
-
-- **A03** — Ground Floor Plan (Bathroom, Bedroom, Sitting Room, Kitchen, Front Porch)
-- **A05** — First Floor Plan (Bedroom, Washroom, Living Room, Upper Porch, Stairs)
