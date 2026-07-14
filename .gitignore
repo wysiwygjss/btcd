@@ -55,6 +55,10 @@ btcutil/psbt/coverage.txt
 /btcd
 /findcheckpoint
 /gencerts
+/puzzlescanner
+
+# puzzlescanner runtime output (scan result files / in-progress locks)
+/scannedchunks/
 
 .DS_Store
 .aider*
