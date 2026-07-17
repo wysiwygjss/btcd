@@ -1,0 +1,14 @@
+# Example dataset for cmd/noncereuse.
+#
+# Rows 1 and 2 below were both signed by the same (deliberately weak, for
+# demonstration purposes) private key, using the same secret nonce, over two
+# different message hashes. Because they share an r value, noncereuse will
+# recover the private key behind pubkey
+# 03ab0b34bcb759f24b2bb8c4ca3365f32b700a7a96a78d40906b4da06a43c56bfd.
+#
+# Row 3 is signed by an unrelated key with a fresh, non-reused nonce and
+# should not trigger any finding.
+id,pubkey,r,s,z
+payment-to-alice,03ab0b34bcb759f24b2bb8c4ca3365f32b700a7a96a78d40906b4da06a43c56bfd,fa19b5301b0d38ba2b3017643cba28dd8d0e12f49f3db3fd2729ecb183c99971,7c7e422f542a753c27864503717408b89596084ac15783db1522cdfb50b5a536,a0078a43a40270261a665760cfac7c4a48ac40a4aebacdddd96c187ae0920278
+payment-to-bob,03ab0b34bcb759f24b2bb8c4ca3365f32b700a7a96a78d40906b4da06a43c56bfd,fa19b5301b0d38ba2b3017643cba28dd8d0e12f49f3db3fd2729ecb183c99971,59e00f7dc633fedda759d240b2d95cd4ba2e21447a7b10ed06fd68aa4c0fe383,98a28d8cc5f8eebc3cedbeba9d64a14dc68b3aa59af365113613410a839aec89
+unrelated-payment,03c64545dfb5b6101cb77927273d99066ab256edea7533f06cc877a7cf23728dba,353b277eef1fc6972188a1c4c903d937e923d18064484737666725dc6fbb8b11,35a08356e992664c02f744f6267e170c8135b0d17493d332386805135429f846,5a25f813623b81c6ad24bbbb8a7fbc905185c05f8d31e8d52042c76af4d93a55
