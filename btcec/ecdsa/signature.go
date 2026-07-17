@@ -67,7 +67,12 @@ func canonicalPadding(b []byte) error {
 	}
 }
 
-func parseSig(sigStr []byte, der bool) (*Signature, error) {
+// parseSigRS parses a signature in BER (or, when der is true, DER) format and
+// returns the raw R and S scalars rather than wrapping them in an opaque
+// Signature. It performs the exact same validation as parseSig and is used
+// both by parseSig itself and by callers, such as ComponentsFromSignature,
+// that need direct access to the individual signature components.
+func parseSigRS(sigStr []byte, der bool) (r, s btcec.ModNScalar, err error) {
 	// Originally this code used encoding/asn1 in order to parse the
 	// signature, but a number of problems were found with this approach.
 	// Despite the fact that signatures are stored as DER, the difference
@@ -81,16 +86,16 @@ func parseSig(sigStr []byte, der bool) (*Signature, error) {
 	// The signature must adhere to the minimum and maximum allowed length.
 	totalSigLen := len(sigStr)
 	if totalSigLen < MinSigLen {
-		return nil, errors.New("malformed signature: too short")
+		return r, s, errors.New("malformed signature: too short")
 	}
 	if der && totalSigLen > MaxSigLen {
-		return nil, errors.New("malformed signature: too long")
+		return r, s, errors.New("malformed signature: too long")
 	}
 
 	// 0x30
 	index := 0
 	if sigStr[index] != 0x30 {
-		return nil, errors.New("malformed signature: no header magic")
+		return r, s, errors.New("malformed signature: no header magic")
 	}
 	index++
 	// length of remaining message
@@ -100,14 +105,14 @@ func parseSig(sigStr []byte, der bool) (*Signature, error) {
 	// siglen should be less than the entire message and greater than
 	// the minimal message size.
 	if int(siglen+2) > len(sigStr) || int(siglen+2) < MinSigLen {
-		return nil, errors.New("malformed signature: bad length")
+		return r, s, errors.New("malformed signature: bad length")
 	}
 	// trim the slice we're working on so we only look at what matters.
 	sigStr = sigStr[:siglen+2]
 
 	// 0x02
 	if sigStr[index] != 0x02 {
-		return nil,
+		return r, s,
 			errors.New("malformed signature: no 1st int marker")
 	}
 	index++
@@ -118,7 +123,7 @@ func parseSig(sigStr []byte, der bool) (*Signature, error) {
 	// hence the -3. We assume that the length must be at least one byte.
 	index++
 	if rLen <= 0 || rLen > len(sigStr)-index-3 {
-		return nil, errors.New("malformed signature: bogus R length")
+		return r, s, errors.New("malformed signature: bogus R length")
 	}
 
 	// Then R itself.
@@ -126,9 +131,9 @@ func parseSig(sigStr []byte, der bool) (*Signature, error) {
 	if der {
 		switch err := canonicalPadding(rBytes); err {
 		case errNegativeValue:
-			return nil, errors.New("signature R is negative")
+			return r, s, errors.New("signature R is negative")
 		case errExcessivelyPaddedValue:
-			return nil, errors.New("signature R is excessively padded")
+			return r, s, errors.New("signature R is excessively padded")
 		}
 	}
 
@@ -140,23 +145,22 @@ func parseSig(sigStr []byte, der bool) (*Signature, error) {
 	// R must be in the range [1, N-1].  Notice the check for the maximum number
 	// of bytes is required because SetByteSlice truncates as noted in its
 	// comment so it could otherwise fail to detect the overflow.
-	var r btcec.ModNScalar
 	if len(rBytes) > 32 {
 		str := "invalid signature: R is larger than 256 bits"
-		return nil, errors.New(str)
+		return r, s, errors.New(str)
 	}
 	if overflow := r.SetByteSlice(rBytes); overflow {
 		str := "invalid signature: R >= group order"
-		return nil, errors.New(str)
+		return r, s, errors.New(str)
 	}
 	if r.IsZero() {
 		str := "invalid signature: R is 0"
-		return nil, errors.New(str)
+		return r, s, errors.New(str)
 	}
 	index += rLen
 	// 0x02. length already checked in previous if.
 	if sigStr[index] != 0x02 {
-		return nil, errors.New("malformed signature: no 2nd int marker")
+		return r, s, errors.New("malformed signature: no 2nd int marker")
 	}
 	index++
 
@@ -165,7 +169,7 @@ func parseSig(sigStr []byte, der bool) (*Signature, error) {
 	index++
 	// S should be the rest of the string.
 	if sLen <= 0 || sLen > len(sigStr)-index {
-		return nil, errors.New("malformed signature: bogus S length")
+		return r, s, errors.New("malformed signature: bogus S length")
 	}
 
 	// Then S itself.
@@ -173,9 +177,9 @@ func parseSig(sigStr []byte, der bool) (*Signature, error) {
 	if der {
 		switch err := canonicalPadding(sBytes); err {
 		case errNegativeValue:
-			return nil, errors.New("signature S is negative")
+			return r, s, errors.New("signature S is negative")
 		case errExcessivelyPaddedValue:
-			return nil, errors.New("signature S is excessively padded")
+			return r, s, errors.New("signature S is excessively padded")
 		}
 	}
 
@@ -187,25 +191,36 @@ func parseSig(sigStr []byte, der bool) (*Signature, error) {
 	// S must be in the range [1, N-1].  Notice the check for the maximum number
 	// of bytes is required because SetByteSlice truncates as noted in its
 	// comment so it could otherwise fail to detect the overflow.
-	var s btcec.ModNScalar
 	if len(sBytes) > 32 {
 		str := "invalid signature: S is larger than 256 bits"
-		return nil, errors.New(str)
+		return r, s, errors.New(str)
 	}
 	if overflow := s.SetByteSlice(sBytes); overflow {
 		str := "invalid signature: S >= group order"
-		return nil, errors.New(str)
+		return r, s, errors.New(str)
 	}
 	if s.IsZero() {
 		str := "invalid signature: S is 0"
-		return nil, errors.New(str)
+		return r, s, errors.New(str)
 	}
 	index += sLen
 
 	// sanity check length parsing
 	if index != len(sigStr) {
-		return nil, fmt.Errorf("malformed signature: bad final length %v != %v",
+		return r, s, fmt.Errorf("malformed signature: bad final length %v != %v",
 			index, len(sigStr))
+	}
+
+	return r, s, nil
+}
+
+// parseSig parses a signature in BER (or, when der is true, DER) format for
+// the curve type `curve` into a Signature type, performing some basic sanity
+// checks.
+func parseSig(sigStr []byte, der bool) (*Signature, error) {
+	r, s, err := parseSigRS(sigStr, der)
+	if err != nil {
+		return nil, err
 	}
 
 	return NewSignature(&r, &s), nil
