@@ -37,23 +37,30 @@ import (
 )
 
 type config struct {
-	mnemonic     string
-	mnemonicFile string
-	passphrase   string
-	seedHex      string
-	testnet      bool
-	schemes      string
-	accounts     uint
-	scanChange   bool
-	gapLimit     uint
-	maxIndex     uint
-	concurrency  int
-	timeout      time.Duration
-	apiBase      string
-	maxRetries   int
-	offline      bool
-	quiet        bool
-	outPath      string
+	mnemonic      string
+	mnemonicFile  string
+	passphrase    string
+	seedHex       string
+	testnet       bool
+	schemes       string
+	accounts      uint
+	scanChange    bool
+	gapLimit      uint
+	maxIndex      uint
+	concurrency   int
+	timeout       time.Duration
+	apiBase       string
+	rpcHost       string
+	rpcUser       string
+	rpcPass       string
+	rpcCookie     string
+	rpcDisableTLS bool
+	rpcTimeout    time.Duration
+	rpcScanBlocks bool
+	maxRetries    int
+	offline       bool
+	quiet         bool
+	outPath       string
 }
 
 func parseFlags() *config {
@@ -96,6 +103,30 @@ func parseFlags() *config {
 			"balances (default: blockstream.info's public API for the "+
 			"selected network). Point this at a self-hosted instance to "+
 			"avoid revealing derived addresses to a third party")
+	flag.StringVar(&cfg.rpcHost, "rpc-host", "",
+		"query balances via a local Bitcoin Core (bitcoind) JSON-RPC "+
+			"server at this host:port (e.g. localhost:8332) or unix "+
+			"socket (unix:///path/to/bitcoin.sock) instead of an "+
+			"Esplora API. Mutually exclusive with -api-base")
+	flag.StringVar(&cfg.rpcUser, "rpc-user", "",
+		"username for bitcoind RPC authentication (ignored when "+
+			"-rpc-cookie-file is set)")
+	flag.StringVar(&cfg.rpcPass, "rpc-pass", "",
+		"password for bitcoind RPC authentication (ignored when "+
+			"-rpc-cookie-file is set)")
+	flag.StringVar(&cfg.rpcCookie, "rpc-cookie-file", "",
+		"path to bitcoind's .cookie file for RPC authentication "+
+			"(e.g. ~/.bitcoin/.cookie); takes precedence over "+
+			"-rpc-user/-rpc-pass")
+	flag.BoolVar(&cfg.rpcDisableTLS, "rpc-disable-tls", true,
+		"connect to bitcoind RPC over plain HTTP instead of HTTPS")
+	flag.DurationVar(&cfg.rpcTimeout, "rpc-timeout", 10*time.Minute,
+		"per-request timeout for bitcoind RPC calls (scanblocks and "+
+			"scantxoutset can take several minutes on a full node)")
+	flag.BoolVar(&cfg.rpcScanBlocks, "rpc-scan-blocks", true,
+		"use bitcoind's scanblocks RPC (requires -blockfilterindex=1) "+
+			"to detect fully-spent addresses; when disabled or "+
+			"unavailable, only current UTXOs are visible")
 	flag.IntVar(&cfg.maxRetries, "max-retries", 3,
 		"how many times to retry a balance lookup after a transient "+
 			"failure (network error, HTTP 429, or HTTP 5xx)")
@@ -259,16 +290,9 @@ func runOnline(
 	cfg *config,
 ) error {
 
-	apiBase := cfg.apiBase
-	if apiBase == "" {
-		apiBase = defaultAPIBase(net)
-	}
-
-	checker := &EsploraClient{
-		BaseURL:        apiBase,
-		Timeout:        cfg.timeout,
-		MaxRetries:     cfg.maxRetries,
-		RetryBaseDelay: time.Second,
+	checker, balanceSource, err := newBalanceChecker(cfg, net)
+	if err != nil {
+		return err
 	}
 
 	scanCfg := ScanConfig{
@@ -286,7 +310,7 @@ func runOnline(
 	defer cancel()
 
 	log.Printf("scanning %d scheme(s) x %d account(s) against %s ...",
-		len(schemes), cfg.accounts, apiBase)
+		len(schemes), cfg.accounts, balanceSource)
 
 	onResult := func(r ScanResult) {
 		if cfg.quiet {
@@ -317,6 +341,50 @@ func runOnline(
 	}
 
 	return scanErr
+}
+
+// newBalanceChecker constructs the configured BalanceChecker and a short
+// label describing where balances are being queried from.
+func newBalanceChecker(
+	cfg *config,
+	net *chaincfg.Params,
+) (BalanceChecker, string, error) {
+
+	if cfg.rpcHost != "" && cfg.apiBase != "" {
+		return nil, "", fmt.Errorf("specify only one of -rpc-host or " +
+			"-api-base")
+	}
+
+	if cfg.rpcHost != "" {
+		useScanBlocks := cfg.rpcScanBlocks
+		client, err := NewBitcoinCoreClient(BitcoinCoreRPCConfig{
+			Host:           cfg.rpcHost,
+			User:           cfg.rpcUser,
+			Pass:           cfg.rpcPass,
+			CookiePath:     cfg.rpcCookie,
+			DisableTLS:     cfg.rpcDisableTLS,
+			Timeout:        cfg.rpcTimeout,
+			MaxRetries:     cfg.maxRetries,
+			RetryBaseDelay: time.Second,
+			UseScanBlocks:  &useScanBlocks,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		return client, "bitcoind rpc at " + cfg.rpcHost, nil
+	}
+
+	apiBase := cfg.apiBase
+	if apiBase == "" {
+		apiBase = defaultAPIBase(net)
+	}
+
+	return &EsploraClient{
+		BaseURL:        apiBase,
+		Timeout:        cfg.timeout,
+		MaxRetries:     cfg.maxRetries,
+		RetryBaseDelay: time.Second,
+	}, apiBase, nil
 }
 
 // defaultAPIBase picks a sensible public Esplora API base URL for net.

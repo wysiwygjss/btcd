@@ -45,9 +45,50 @@ this entirely:
 * Pass `-offline` to skip network access altogether; `bip39scan` will just
   derive and list the addresses it would have checked (`-gap-limit` per
   branch), so you can check them elsewhere (e.g. your own full node).
+* Point `-rpc-host` at a local [Bitcoin Core](https://bitcoincore.org/)
+  (`bitcoind`) node so lookups never leave your machine (see below).
 * Or point `-api-base` at a block explorer you run yourself (any
   [Esplora](https://github.com/Blockstream/electrs)-compatible instance,
   such as one backed by `electrs`).
+
+## Bitcoin Core RPC mode
+
+By default, `bip39scan` queries an Esplora-compatible REST API
+(`blockstream.info` unless you override `-api-base`). To query your own
+synced `bitcoind` instead, pass `-rpc-host`:
+
+```sh
+# Mainnet bitcoind on the default RPC port, cookie-file auth:
+go run ./cmd/bip39scan -mnemonic-file ./my-seed-phrase.txt \
+  -rpc-host localhost:8332 \
+  -rpc-cookie-file ~/.bitcoin/.cookie
+
+# Testnet:
+go run ./cmd/bip39scan -mnemonic-file ./my-seed-phrase.txt -testnet \
+  -rpc-host localhost:18332 \
+  -rpc-cookie-file ~/.bitcoin/testnet3/.cookie
+
+# Unix socket RPC (common on Linux):
+go run ./cmd/bip39scan -mnemonic-file ./my-seed-phrase.txt \
+  -rpc-host unix:///path/to/bitcoin/.cookie \
+  -rpc-cookie-file ~/.bitcoin/.cookie
+```
+
+Under the hood, RPC mode uses two Bitcoin Core calls per address:
+
+1. `scanblocks` (when `-rpc-scan-blocks` is enabled and the node was
+   started with `-blockfilterindex=1`) to detect whether the address ever
+   appeared in a confirmed transaction — including addresses that have since
+   been fully spent, which the gap-limit scan needs to see.
+2. `scantxoutset` to read any current UTXOs and confirmed balance.
+
+RPC mode is **much slower** than an Esplora indexer because each address
+may require scanning the node's compact block filters and/or UTXO set.
+Mempool (unconfirmed) balances are not reported. For the best of both
+worlds (local + fast), run [electrs](https://github.com/Blockstream/electrs)
+locally and point `-api-base` at it instead.
+
+`-rpc-host` and `-api-base` are mutually exclusive.
 
 ## Usage
 
@@ -82,6 +123,13 @@ go run ./cmd/bip39scan -seed-hex 000102030405060708090a0b0c0d0e0f
 | `-concurrency`    | `4`                       | Max balance lookups in flight at once. |
 | `-timeout`        | `15s`                     | Per-request timeout for balance lookups. |
 | `-api-base`       | blockstream.info's API    | Base URL of an Esplora-compatible balance API. |
+| `-rpc-host`       | (none)                    | Query balances via local `bitcoind` RPC instead of Esplora. |
+| `-rpc-user`       | (none)                    | `bitcoind` RPC username (ignored when `-rpc-cookie-file` is set). |
+| `-rpc-pass`       | (none)                    | `bitcoind` RPC password (ignored when `-rpc-cookie-file` is set). |
+| `-rpc-cookie-file`| (none)                    | Path to `bitcoind`'s `.cookie` file for RPC auth. |
+| `-rpc-disable-tls`| `true`                    | Use plain HTTP for `bitcoind` RPC (the default listener). |
+| `-rpc-timeout`    | `10m`                     | Per-request timeout for `bitcoind` RPC calls. |
+| `-rpc-scan-blocks`| `true`                    | Use `scanblocks` to detect fully-spent addresses (needs `-blockfilterindex=1`). |
 | `-max-retries`    | `3`                       | Retries after a transient failure (network error, HTTP 429/5xx). |
 | `-offline`        | `false`                   | Skip balance checks; just derive and list addresses. |
 | `-quiet`          | `false`                   | Suppress per-address progress logging. |
